@@ -1,0 +1,29 @@
+name: ClickUpPlugin
+main: org.asdfgamer.bukkit.clickup.ClickUpPlugin
+version: "0.1"
+commands:
+  tasks:
+    description: Show all open tasks
+    usage: "Usage: '/tasks' returns a List with all open Tasks and the corresponding IDs"
+  task:
+    description: Show info for a given taskID
+    usage: "Usage: '/task TaskID' returns information to the Task with the given ID"
+  new:
+    description: Creates a new Task
+    usage: "Usage: '/new Task' to create a new task"
+  wip:
+    description: Moves a Task to 'in Progress' stage
+    usage: "Usage: '/wip TaskID' to move a existing task to 'in Progress' stage"
+  inProgress:
+    description: Moves a Task to 'in Progress' stage
+    usage: "Usage: '/inProgress TaskID' to move a existing task to 'in Progress' stage"
+  review:
+    description: Moves a Task to review stage
+    usage: "Usage: '/review TaskID' to move a existing task to review stage"
+  close:
+    description: Close a Task
+    usage: "Usage: '/review TaskID' to close a existing task"
+
+permissions:
+  clickupplugin.*:
+    description: Gives access to all commands
