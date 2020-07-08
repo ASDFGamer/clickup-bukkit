@@ -1,6 +1,7 @@
 name: ClickUpPlugin
 main: org.asdfgamer.bukkit.clickup.ClickUpPlugin
-version: "0.1"
+version: 1.0
+api-version: 1.16
 commands:
   tasks:
     description: Show all open tasks

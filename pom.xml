@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.asdfgamer.bukkit</groupId>
   <artifactId>clickup-bukkit</artifactId>
-  <version>0.1</version>
+  <version>1.0</version>
   <name>ClickUpPlugin</name>
   <url>http://www.bukkit.org</url>
 
