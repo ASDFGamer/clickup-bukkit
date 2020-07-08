@@ -312,7 +312,7 @@ public class ClickUpPlugin extends JavaPlugin
         try
         {
             return TaskIDs.getTask(internID).getId();
-        }catch (ArrayIndexOutOfBoundsException | NullPointerException e){
+        }catch (IndexOutOfBoundsException | NullPointerException e){
             return null;
         }
     }
