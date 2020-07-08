@@ -2,9 +2,14 @@ package org.asdfgamer.bukkit.clickup.model;
 
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
+import org.asdfgamer.bukkit.clickup.Settings;
 import org.asdfgamer.bukkit.clickup.TaskIDs;
+import org.asdfgamer.bukkit.clickup.rest.Executor;
+import org.asdfgamer.bukkit.clickup.rest.TaskService;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public class Task
@@ -64,13 +69,14 @@ public class Task
     @Expose
     private String url;
 
+    private List<Task> subtasks = null;
+
     public String getId() {
         return id;
     }
 
     public void setId(String id) {
         this.id = id;
-        TaskIDs.addTask(this);
     }
 
     public String getName() {
@@ -224,4 +230,17 @@ public class Task
         return hash;
     }
 
+    public List<Task> getSubtasks(TaskService taskService)
+    {
+        if (subtasks == null){
+
+            TaskList taskList = Executor.execute(taskService.listTasks(Settings.listID,false,id));
+            if (taskList != null){
+                subtasks = taskList.getTasks();
+            }else{
+               subtasks = new ArrayList<>();
+            }
+        }
+        return subtasks;
+    }
 }

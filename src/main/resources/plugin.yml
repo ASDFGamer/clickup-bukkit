@@ -23,7 +23,12 @@ commands:
   close:
     description: Close a Task
     usage: "Usage: '/review TaskID' to close a existing task"
-
+  setClickUpName:
+    description: Binds the given Username to the Player that executes the command.
+    usage: "Usage: '/setClickUpName username' to set your Clickup name"
+  assign:
+    description: Assigns the given Task to the given Player.
+    usage: "Usage: '/assign TaskID [playerName] ' to assign the given Task to the current player or the given Player"
 permissions:
   clickupplugin.*:
     description: Gives access to all commands

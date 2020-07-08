@@ -2,20 +2,22 @@ package org.asdfgamer.bukkit.clickup;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import org.asdfgamer.bukkit.clickup.model.StatusTask;
-import org.asdfgamer.bukkit.clickup.model.Task;
-import org.asdfgamer.bukkit.clickup.model.TaskList;
-import org.asdfgamer.bukkit.clickup.model.User;
+import org.asdfgamer.bukkit.clickup.model.*;
 import org.asdfgamer.bukkit.clickup.rest.Executor;
 import org.asdfgamer.bukkit.clickup.rest.TaskService;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import retrofit2.Retrofit;
 import retrofit2.converter.gson.GsonConverterFactory;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+
+import static org.asdfgamer.bukkit.clickup.Settings.*;
 
 public class ClickUpPlugin extends JavaPlugin
 {
@@ -24,6 +26,8 @@ public class ClickUpPlugin extends JavaPlugin
 
     private TaskService taskService;
 
+    private boolean configLoaded;
+
 
     @Override
     public void onEnable()
@@ -31,7 +35,54 @@ public class ClickUpPlugin extends JavaPlugin
         super.onEnable();
         retrofit = createRetrofit();
         taskService = retrofit.create(TaskService.class);
-//        getConfig().
+        loadConfig();
+        initLoadLists();
+    }
+
+    private void initLoadLists()
+    {
+        TaskList taskList = Executor.execute(taskService.listTasks(listID,false));
+        if (taskList == null){
+            return;
+        }
+        for (Task task: taskList.getTasks()){
+            TaskIDs.addTask(task);
+            UserIDs.addUser(task.getCreator());
+            for (User user: task.getAssignees()){
+                UserIDs.addUser(user);
+            }
+        }
+    }
+
+    private void loadConfig()
+    {
+        Map<String,Object> configValues = getConfig().getValues(false);
+        if (!configValues.containsKey("personalToken")){
+            saveDefaultConfig();
+        }
+        clickupToken = configValues.get("personalToken").toString();
+        listID = configValues.get("listID").toString();
+        configLoaded = true;
+        if ((clickupToken == null) || (clickupToken.isEmpty())||(clickupToken.equalsIgnoreCase("To be filled"))){
+            getLogger().severe("No PersonalToken is given in the config. This Plugins requires a token to work.");
+            configLoaded = false;
+        }
+        if ((listID == null) || (listID.isEmpty())||(listID.equalsIgnoreCase("To be filled"))){
+            getLogger().severe("No ListID is given in the config. This Plugins requires a listID to work.");
+            configLoaded = false;
+        }
+        ConfigurationSection userSection = getConfig().getConfigurationSection("users");
+        if (userSection != null)
+        {
+            Map<String, Object> users = userSection.getValues(false);
+            for (Map.Entry<String, Object> entry : users.entrySet())
+            {
+                if (entry.getValue() instanceof Integer)
+                {
+                    UserIDs.attachMCName((Integer) entry.getValue(), entry.getKey());
+                }
+            }
+        }
     }
 
     private Retrofit createRetrofit()
@@ -43,7 +94,7 @@ public class ClickUpPlugin extends JavaPlugin
             Request request = chain.
                     request().
                     newBuilder().
-                    addHeader("Authorization", Settings.clickupToken).
+                    addHeader("Authorization", clickupToken).
                     build();
             return chain.proceed(request);
         });
@@ -59,11 +110,20 @@ public class ClickUpPlugin extends JavaPlugin
     public void onDisable()
     {
         super.onDisable();
+        for (Map.Entry<String,Integer> entry: UserIDs.getAllMCNames().entrySet())
+        {
+            getConfig().set("users." + entry.getKey(), entry.getValue());
+        }
+        saveConfig();
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args)
     {
+        if(!configLoaded){
+            sender.sendMessage("The Plugin is not configured, this has to be done first.");
+            return true;
+        }
         switch (command.getName().toLowerCase()){
             case "tasks":
                 return outputList(sender);
@@ -78,19 +138,80 @@ public class ClickUpPlugin extends JavaPlugin
                 return setStatus(sender,args,"review");
             case "close":
                 return setStatus(sender,args,"Closed");
+            case "setclickupname":
+                return setName(sender,args);
+            case "assign":
+                return assignTask(sender,args);
             default:
                 getLogger().warning("The command '" + command.getName() + "' is not yet implemented." );
                 return false;
         }
     }
 
-    private boolean createTask(CommandSender sender, String[] args)
+    private boolean assignTask(CommandSender sender, String[] args)
     {
-        if (!(sender instanceof Player)){
-            getLogger().warning("Only players can output infos for a task.");
+        Integer id;
+        if (args.length == 2){
+            id = UserIDs.getIdFromMCName(args[1]);
+        }else if(sender instanceof Player) {
+            if (args.length != 1){
+                return false;
+            }
+            id = UserIDs.getIdFromMCName(sender.getName());
+        }else {
             return false;
         }
-        Player player = (Player)sender;
+        if(id == null){
+            if (sender instanceof Player){
+                sender.sendMessage("You haven't set your ClickUp Username yet");
+                sender.sendMessage("This can be done per /setClickUpName");
+            }else{
+                sender.sendMessage("The given Player does not exists or hasn't set his username yet.");
+            }
+        }
+        String taskID = parseID(args);
+        if (taskID == null){
+            return false;
+        }
+        AssigneeUpdate update = new AssigneeUpdate();
+        update.addAssignee(id);
+        AssigneeTask updateTask = new AssigneeTask();
+        updateTask.setAssignees(update);
+        Task task = Executor.execute(taskService.updateStatus(taskID,updateTask));
+        if (task != null){
+            sender.sendMessage("Added assignee");
+        }else{
+            sender.sendMessage("There was a problem while adding the assignee");
+        }
+        return true;
+    }
+
+    private boolean setName(CommandSender sender, String[] args)
+    {
+        if (!(sender instanceof Player)){
+            sender.sendMessage("Only players can attach their username to their ClickUp name");
+            return true;
+        }
+        Player player = (Player) sender;
+        if (args.length == 0){
+            return false;
+        }
+        StringBuilder name = new StringBuilder();
+        for (String arg: args){
+            name.append(arg).append(" ");
+        }
+        if(UserIDs.attachMCName(name.toString().trim(),player.getName())){
+            player.sendMessage("Your Username was successfully set");
+        }else{
+            player.sendMessage("There was a Problem while setting your Username.");
+            player.sendMessage("Are you sure it is the correct username and you have already?");
+            player.sendMessage("You also have to be assigned to a existing task or created a task.");
+        }
+        return true;
+    }
+
+    private boolean createTask(CommandSender sender, String[] args)
+    {
         if (args.length != 1){
             return false;
         }
@@ -98,20 +219,16 @@ public class ClickUpPlugin extends JavaPlugin
         newTask.setName(args[0]);
         Task task = Executor.execute(taskService.createTask(Settings.listID,newTask));
         if (task == null){
-            player.sendMessage("There was a Problem while creating the status");
+            sender.sendMessage("There was a Problem while creating the status");
         }else{
-            player.sendMessage("The Task was created");
+            sender.sendMessage("The Task was created");
+            TaskIDs.addTask(task);
         }
         return true;
     }
 
     private boolean setStatus(CommandSender sender, String[] args, String newStatus)
     {
-        if (!(sender instanceof Player)){
-            getLogger().warning("Only players can output infos for a task.");
-            return false;
-        }
-        Player player = (Player)sender;
         String taskID = parseID(args);
         if (taskID == null){
             return false;
@@ -120,46 +237,65 @@ public class ClickUpPlugin extends JavaPlugin
         taskUpdate.setStatus(newStatus);
         Task task = Executor.execute(taskService.updateStatus(taskID,taskUpdate));
         if (task == null){
-            player.sendMessage("There was a Problem while updating the status");
+            sender.sendMessage("There was a Problem while updating the status");
         }else{
-             player.sendMessage("The Status of the Task was updated");
+            sender.sendMessage("The Status of the Task was updated");
         }
         return true;
     }
 
     private boolean outputInfo(CommandSender sender, String[] args)
     {
-        if (!(sender instanceof Player)){
-            getLogger().warning("Only players can output infos for a task.");
-            return false;
-        }
-        Player player = (Player)sender;
         String taskID = parseID(args);
         if (taskID == null){
             return false;
         }
         Task task = Executor.execute(taskService.getTask(taskID));
         if (task == null){
-            player.sendMessage("There was a problem while loading information about the task");
+            sender.sendMessage("There was a problem while loading information about the task");
             return true;
         }
-        player.sendMessage("Name:      " + task.getName());
-        player.sendMessage("Creator:   " + task.getCreator().getUsername());
+        sender.sendMessage("Name:      " + task.getName());
+        sender.sendMessage("Creator:   " + outputUser(task.getCreator()));
         if (task.getAssignees().isEmpty()){
-            player.sendMessage("Assignees: " + "Not yet Assigned");
+            sender.sendMessage("Assignees: " + "Not yet Assigned");
         }else{
             if (task.getAssignees().size() == 1){
-                player.sendMessage("Assignees: " + task.getAssignees().get(0).getUsername());
+                sender.sendMessage("Assignees: " + outputUser(task.getAssignees().get(0)));
             }
             else{
-                player.sendMessage("Assignees:");
+                sender.sendMessage("Assignees:");
                 for (User assignee: task.getAssignees()){
-                    player.sendMessage("\t\t" + assignee.getUsername());
+                    sender.sendMessage("      " + outputUser(assignee));
                 }
             }
         }
-        player.sendMessage("State:     " + task.getStatus().getStatus());
+        sender.sendMessage("State:     " + task.getStatus().getStatus());
+        List<Task> subtasks = task.getSubtasks(taskService);
+        if (!subtasks.isEmpty()){
+            if (subtasks.size() == 1){
+                sender.sendMessage("Subtask:  " + subtasks.get(0).getName());
+            }else{
+                sender.sendMessage("Subtask:");
+                for (Task subTask: subtasks){
+                    sender.sendMessage("      " + subTask.getName());
+                }
+            }
+        }else {
+            sender.sendMessage("Subtasks:  This task has no subtasks");
+        }
         return true;
+    }
+
+    private String outputUser(User user)
+    {
+        UserIDs.addUser(user);
+        String mcName = UserIDs.getMCName(user.getId());
+        if (mcName == null){
+            return user.getUsername();
+        }else {
+            return user.getUsername() + " (" + mcName+ ")";
+        }
     }
 
     private String parseID(String[] args)
@@ -183,22 +319,16 @@ public class ClickUpPlugin extends JavaPlugin
 
     private boolean outputList(CommandSender sender)
     {
-        if (!(sender instanceof Player))
-        {
-            getLogger().warning("Only players can output infos for tasks.");
-            return false;
-        }
-        Player player = (Player)sender;
-        TaskList taskList = Executor.execute(taskService.listTasks(Settings.listID));
+        TaskList taskList = Executor.execute(taskService.listTasks(Settings.listID,false));
         if (taskList == null)
         {
-            player.sendMessage("There was a Problem while loading the Tasks");
+            sender.sendMessage("There was a Problem while loading the Tasks");
             return true;
         }
-        player.sendMessage("Open Tasks:");
+        sender.sendMessage("Open Tasks:");
         for (Task task: taskList.getTasks()){
             TaskIDs.addTask(task);
-            player.sendMessage(TaskIDs.getID(task) + " :" + task.getName() + " "+ task.getId());
+            sender.sendMessage(TaskIDs.getID(task) + " :" + task.getName());
         }
         return true;
     }
